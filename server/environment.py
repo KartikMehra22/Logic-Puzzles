@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 
 TASKS: List[Dict[str, Any]] = [
-    # Easy starters - quick confidence builders
+    # Easy ones to get started
     {
         "id": 0,
         "difficulty": "easy",
@@ -67,7 +67,7 @@ TASKS: List[Dict[str, Any]] = [
         "max_attempts": 3,
     },
 
-    # Medium set - some twists, still fair
+    # Medium ones with small twists
     {
         "id": 3,
         "difficulty": "medium",
@@ -133,7 +133,7 @@ TASKS: List[Dict[str, Any]] = [
         "max_attempts": 3,
     },
 
-    # Hard section - needs proper pattern spotting
+    # Hard ones that need deeper pattern checks
     {
         "id": 6,
         "difficulty": "hard",
@@ -199,3 +199,25 @@ TASKS: List[Dict[str, Any]] = [
         "max_attempts": 2,
     },
 ]
+
+
+def grade_answer(guess: str, correct_answer: str) -> bool:
+    """
+    Compare a guess to the expected answer.
+    Trims spaces and ignores case.
+    Also treats equivalent numeric values as correct.
+    """
+    guess = guess.strip().lower()
+    correct = correct_answer.strip().lower()
+
+    # Plain text match first
+    if guess == correct:
+        return True
+
+    # Then try numeric match for values like 6.25 vs 6.250
+    try:
+        return float(guess) == float(correct)
+    except ValueError:
+        pass
+
+    return False
