@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 
 TASKS: List[Dict[str, Any]] = [
-    # Easy ones to get started
+    # easy tier — single-step arithmetic, agent should nail these fast
     {
         "id": 0,
         "difficulty": "easy",
@@ -67,7 +67,7 @@ TASKS: List[Dict[str, Any]] = [
         "max_attempts": 3,
     },
 
-    # Medium ones with small twists
+    # medium tier — introduces non-linear rules, alternating patterns, alpha sequences
     {
         "id": 3,
         "difficulty": "medium",
@@ -133,7 +133,7 @@ TASKS: List[Dict[str, Any]] = [
         "max_attempts": 3,
     },
 
-    # Hard ones that need deeper pattern checks
+    # hard tier — factorials, primes, look-and-say; needs actual reasoning, not just delta guessing
     {
         "id": 6,
         "difficulty": "hard",
@@ -203,21 +203,55 @@ TASKS: List[Dict[str, Any]] = [
 
 def grade_answer(guess: str, correct_answer: str) -> bool:
     """
-    Compare a guess to the expected answer.
-    Trims spaces and ignores case.
-    Also treats equivalent numeric values as correct.
+    Normalize both sides before comparing — agents tend to add trailing spaces
+    or return '6.250' instead of '6.25', so we handle that gracefully.
+    String match runs first, numeric fallback only if that fails.
     """
     guess = guess.strip().lower()
     correct = correct_answer.strip().lower()
 
-    # Plain text match first
+    # covers most cases — letters, words, clean integers
     if guess == correct:
         return True
 
-    # Then try numeric match for values like 6.25 vs 6.250
+    # float comparison catches things like '6.25' vs '6.250' or '10' vs '10.0'
     try:
         return float(guess) == float(correct)
     except ValueError:
         pass
 
     return False
+
+
+# base reward per tier — scale this up later if we want harder tasks to feel more impactful
+DIFFICULTY_BASE_REWARD = {
+    "easy":   1.0,
+    "medium": 2.0,
+    "hard":   3.0,
+}
+
+def calculate_reward(
+    correct: bool,
+    difficulty: str,
+    attempts_used: int,
+    max_attempts: int
+) -> float:
+    """
+    Wrong guess always returns 0 — no partial credit, keeps the signal clean.
+    For correct guesses, reward = base + efficiency bonus.
+
+    Efficiency is how many attempts were still left before this guess landed.
+    First-try solve on a 3-attempt task gives full 1.0 bonus;
+    second-try solve on a 3-attempt task gives 0.5 bonus;
+    last-attempt solve gives 0 — agent burned through all its chances.
+    """
+    if not correct:
+        return 0.0
+
+    base = DIFFICULTY_BASE_REWARD.get(difficulty, 1.0)
+
+    # remaining attempts BEFORE this guess counts — not after
+    attempts_remaining = max_attempts - attempts_used
+    efficiency = attempts_remaining / max_attempts
+
+    return round(base + efficiency, 2)
