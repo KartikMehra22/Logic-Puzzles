@@ -1,4 +1,6 @@
+import random
 from typing import List, Dict, Any
+from openenv import Environment  # base class from OpenEnv
 
 TASKS: List[Dict[str, Any]] = [
     # easy tier — single-step arithmetic, agent should nail these fast
@@ -255,3 +257,87 @@ def calculate_reward(
     efficiency = attempts_remaining / max_attempts
 
     return round(base + efficiency, 2)
+
+
+class PatternEnvironment(Environment):
+
+    def __init__(self):
+        # episode state — none of this leaks to the agent
+        self._task = None           # whichever task got sampled this episode
+        self._attempts_used = 0     # increments on every step call
+        self._solved = False        # flipped only on a correct guess
+        self._done = False          # signals the runner to stop stepping
+        self._reward_history = []   # handy for post-episode analysis
+
+    def reset(self, difficulty: str = None) -> dict:
+        # if a difficulty is passed, restrict the pool — useful for curriculum training
+        pool = TASKS
+        if difficulty in ("easy", "medium", "hard"):
+            pool = [t for t in TASKS if t["difficulty"] == difficulty]
+
+        self._task = random.choice(pool)
+        self._attempts_used = 0
+        self._solved = False
+        self._done = False
+        self._reward_history = []
+
+        # first obs has no feedback yet, agent just sees the sequence cold
+        return {
+            "sequence": self._task["sequence"],
+            "feedback": "Game started! What comes next?",
+            "attempts_left": self._task["max_attempts"],
+            "task_difficulty": self._task["difficulty"],
+        }
+
+    def step(self, action: dict) -> dict:
+        guess = action.get("guess", "").strip()
+
+        self._attempts_used += 1
+        attempts_left = self._task["max_attempts"] - self._attempts_used
+
+        correct = grade_answer(guess, self._task["answer"])
+
+        reward = calculate_reward(
+            correct=correct,
+            difficulty=self._task["difficulty"],
+            attempts_used=self._attempts_used,
+            max_attempts=self._task["max_attempts"],
+        )
+        self._reward_history.append(reward)
+
+        # three terminal cases: solved, ran out of attempts, or still going
+        if correct:
+            self._solved = True
+            self._done = True
+            feedback = f"Correct! '{guess}' is right. Rule: {self._task['rule']}"
+        elif attempts_left == 0:
+            self._done = True
+            feedback = (
+                f"Out of attempts! The answer was '{self._task['answer']}'. "
+                f"Rule: {self._task['rule']}"
+            )
+        else:
+            feedback = f"Wrong! '{guess}' is not right. {attempts_left} attempt(s) left."
+
+        return {
+            "observation": {
+                "sequence": self._task["sequence"],
+                "feedback": feedback,
+                "attempts_left": attempts_left,
+                "task_difficulty": self._task["difficulty"],
+            },
+            "reward": reward,
+            "done": self._done,
+        }
+
+    @property
+    def state(self) -> dict:
+        # server-side only — expose this for logging/debugging, never pass it to the agent
+        return {
+            "correct_answer": self._task["answer"] if self._task else None,
+            "task_id": self._task["id"] if self._task else None,
+            "difficulty": self._task["difficulty"] if self._task else None,
+            "solved": self._solved,
+            "attempts_used": self._attempts_used,
+            "reward_history": self._reward_history,
+        }
