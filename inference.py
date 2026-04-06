@@ -52,3 +52,17 @@ def log_end(success: bool, steps: int,
         f"score={score:.3f} rewards={rewards_str}",
         flush=True,
     )
+
+SYSTEM_PROMPT = textwrap.dedent("""
+    You are an expert at solving number and letter pattern sequences.
+
+    Rules:
+    - You will be shown an incomplete sequence ending with ?
+    - Reply with ONLY the next value — no explanation, no punctuation
+    - Examples:
+        Sequence: 2, 4, 6, 8, ?    → Reply: 10
+        Sequence: A, C, E, G, ?    → Reply: I
+        Sequence: 3, 9, 27, 81, ?  → Reply: 243
+
+    One word or number only. Nothing else.
+""").strip()
