@@ -7,7 +7,7 @@ from openai import OpenAI
 API_KEY       = os.getenv("HF_TOKEN")
 API_BASE_URL  = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME    = os.getenv("MODEL_NAME",   "Qwen/Qwen2.5-72B-Instruct")
-IMAGE_NAME    = os.getenv("IMAGE_NAME")   # Docker image to run for the env
+IMAGE_NAME    = os.getenv("IMAGE_NAME")   # Docker image used to start the environment
 
 TASK_NAME     = os.getenv("PATTERN_TASK",      "sequence_guess")
 BENCHMARK     = os.getenv("PATTERN_BENCHMARK", "my_pattern_env")
@@ -17,26 +17,26 @@ MAX_TOKENS    = int(float(os.getenv("MAX_TOKENS",  "50")))
 
 
 # -----------------------------------------------
-# Scoring config
+# Scoring settings
 # -----------------------------------------------
-# Max score in one episode:
+# Best possible episode score:
 # hard task reward (3.0) + first-try bonus (0.5) = 3.5
 MAX_TOTAL_REWARD        = float(os.getenv("MAX_TOTAL_REWARD",        "3.5"))
 SUCCESS_SCORE_THRESHOLD = float(os.getenv("SUCCESS_SCORE_THRESHOLD", "0.1"))
 
 
 # -----------------------------------------------
-# Logging helpers (stdout goes through these only)
+# Logging helpers
 # -----------------------------------------------
 def log_start(task: str, env: str, model: str) -> None:
-    # Keep format stable so logs are easy to parse.
+    # Keep this line format stable for log parsers.
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
 def log_step(step: int, action: str, reward: float,
              done: bool, error: Optional[str]) -> None:
     error_val = error if error else "null"
-    done_val  = str(done).lower()          # Match JSON-style true/false.
+    done_val  = str(done).lower()          # Use lowercase true/false for consistency.
     print(
         f"[STEP] step={step} action={action} "
         f"reward={reward:.2f} done={done_val} error={error_val}",
@@ -110,8 +110,92 @@ def get_model_guess(
             stream=False,
         )
         text = (completion.choices[0].message.content or "").strip()
-        return text if text else "0"   # fallback if model returns empty
+        return text if text else "0"   # Fallback if the model returns an empty response.
     except Exception as exc:
-        # Log to stderr so it doesn't pollute stdout log format
+        # Send debug errors to stderr so stdout stays clean for structured logs.
         print(f"[DEBUG] LLM call failed: {exc}", flush=True, file=__import__('sys').stderr)
         return "0"
+    
+async def main() -> None:
+    # Initialize API client.
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+
+    # Start the environment client from the Docker image.
+    from my_pattern_env import PatternEnvClient
+    env = await PatternEnvClient.from_docker_image(IMAGE_NAME)
+
+    # Episode tracking.
+    history : List[str]  = []
+    rewards : List[float] = []
+    steps_taken           = 0
+    score                 = 0.0
+    success               = False
+
+    # Emit start log once per run.
+    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+
+    try:
+        # Reset and read the first observation.
+        result      = await env.reset()
+        obs         = result.observation
+        sequence    = obs.sequence
+        feedback    = obs.feedback
+        attempts_left = obs.attempts_left
+        difficulty  = obs.task_difficulty
+
+        # Keep stepping until done or step limit is reached.
+        for step in range(1, MAX_STEPS + 1):
+
+            if result.done:
+                break
+
+            # Ask the model for the next guess.
+            guess = get_model_guess(
+                client, sequence, feedback,
+                attempts_left, difficulty, history
+            )
+
+            # Submit the guess to the environment.
+            result = await env.step({"guess": guess})
+            obs    = result.observation
+
+            reward = result.reward or 0.0
+            done   = result.done
+            error  = None   # Wrong guesses are normal, not runtime errors.
+
+            # Update episode trackers.
+            rewards.append(reward)
+            steps_taken   = step
+            feedback      = obs.feedback
+            attempts_left = obs.attempts_left
+
+            # Emit step log right after the environment responds.
+            log_step(step=step, action=guess,
+                     reward=reward, done=done, error=error)
+
+            # Keep short history to avoid repeating bad guesses.
+            history.append(f"Step {step}: guessed '{guess}' → {feedback}")
+
+            if done:
+                break
+
+        # Compute normalized score in [0.0, 1.0].
+        score   = sum(rewards) / MAX_TOTAL_REWARD if MAX_TOTAL_REWARD > 0 else 0.0
+        score   = min(max(score, 0.0), 1.0)        # Clamp to valid range.
+        success = score >= SUCCESS_SCORE_THRESHOLD
+
+    finally:
+        # Always close the environment, even on failure.
+        try:
+            await env.close()
+        except Exception as e:
+            print(f"[DEBUG] env.close() error: {e}",
+                  flush=True, file=__import__('sys').stderr)
+
+        # Emit final summary log no matter how the run ended.
+        log_end(success=success, steps=steps_taken,
+                score=score, rewards=rewards)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
