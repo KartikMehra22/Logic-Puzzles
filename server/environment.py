@@ -1,6 +1,6 @@
 import random
 from typing import List, Dict, Any
-from openenv import Environment  # base class from OpenEnv
+from openenv.core import Environment  # base class from OpenEnv
 
 TASKS: List[Dict[str, Any]] = [
     # easy tier — single-step arithmetic, agent should nail these fast
