@@ -23,6 +23,10 @@ jobs:
           pip install -r requirements.txt
           pip install openenv-core
 
+      - name: Prepare env file
+        run: |
+          cp .env.example .env
+
       - name: Run validation
         run: |
           chmod +x scripts/validate-submission.sh
