@@ -1,13 +1,20 @@
 # Installation
 
-## 1. Create the virtual environment
+## 1. Clone the repository
+
+```bash
+git clone https://github.com/MAYANKSHARMA01010/Logic-Puzzles.git
+cd Logic-Puzzles
+```
+
+## 2. Create the virtual environment
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-## 2. Create the env file
+## 3. Create the env file
 
 ```bash
 cp .env.example .env
@@ -16,13 +23,13 @@ nano .env
 
 Add your Hugging Face token and API values.
 
-## 3. Install dependencies
+## 4. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 4. Validate the setup
+## 5. Validate the setup
 
 ```bash
 python validate.py
