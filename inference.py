@@ -1,7 +1,7 @@
 import asyncio
 import os
 import textwrap
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from openai import OpenAI
 
 API_KEY       = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY")
@@ -15,6 +15,13 @@ MAX_STEPS     = int(float(os.getenv("MAX_STEPS",   "3")))
 TEMPERATURE   = float(os.getenv("TEMPERATURE",     "0.3"))
 MAX_TOKENS    = int(float(os.getenv("MAX_TOKENS",  "50")))
 
+# Submit at least 3 graded tasks by default (easy/medium/hard).
+TASK_RUNS: List[Tuple[str, str]] = [
+    (f"{TASK_NAME}_easy", "easy"),
+    (f"{TASK_NAME}_medium", "medium"),
+    (f"{TASK_NAME}_hard", "hard"),
+]
+
 
 # -----------------------------------------------
 # Scoring settings
@@ -23,6 +30,7 @@ MAX_TOKENS    = int(float(os.getenv("MAX_TOKENS",  "50")))
 # hard task reward (3.0) + first-try bonus (0.5) = 3.5
 MAX_TOTAL_REWARD        = float(os.getenv("MAX_TOTAL_REWARD",        "3.5"))
 SUCCESS_SCORE_THRESHOLD = float(os.getenv("SUCCESS_SCORE_THRESHOLD", "0.1"))
+EPSILON_SCORE           = 0.001
 
 
 # -----------------------------------------------
@@ -124,65 +132,68 @@ async def main() -> None:
     from client import PatternEnvClient
     env = await PatternEnvClient.from_url("http://localhost:7860")
 
-    # Episode tracking.
-    history : List[str]  = []
-    rewards : List[float] = []
-    steps_taken           = 0
-    score                 = 0.0
-    success               = False
-
-    # Emit start log once per run.
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
-
     try:
-        # Reset and read the first observation.
-        result      = await env.reset()
-        obs         = result.observation
-        sequence    = obs.sequence
-        feedback    = obs.feedback
-        attempts_left = obs.attempts_left
-        difficulty  = obs.task_difficulty
+        for task_label, task_difficulty in TASK_RUNS:
+            # Episode tracking.
+            history: List[str] = []
+            rewards: List[float] = []
+            steps_taken = 0
+            score = 0.0
+            success = False
 
-        # Keep stepping until done or step limit is reached.
-        for step in range(1, MAX_STEPS + 1):
+            log_start(task=task_label, env=BENCHMARK, model=MODEL_NAME)
 
-            if result.done:
-                break
-
-            # Ask the model for the next guess.
-            guess = get_model_guess(
-                client, sequence, feedback,
-                attempts_left, difficulty, history
-            )
-
-            # Submit the guess to the environment.
-            result = await env.step({"guess": guess})
-            obs    = result.observation
-
-            reward = result.reward or 0.0
-            done   = result.done
-            error  = None   # Wrong guesses are normal, not runtime errors.
-
-            # Update episode trackers.
-            rewards.append(reward)
-            steps_taken   = step
-            feedback      = obs.feedback
+            # Reset and read the first observation.
+            result = await env.reset(difficulty=task_difficulty)
+            obs = result.observation
+            sequence = obs.sequence
+            feedback = obs.feedback
             attempts_left = obs.attempts_left
+            difficulty = obs.task_difficulty
 
-            # Emit step log right after the environment responds.
-            log_step(step=step, action=guess,
-                     reward=reward, done=done, error=error)
+            # Keep stepping until done or step limit is reached.
+            for step in range(1, MAX_STEPS + 1):
+                if result.done:
+                    break
 
-            # Keep short history to avoid repeating bad guesses.
-            history.append(f"Step {step}: guessed '{guess}' → {feedback}")
+                # Ask the model for the next guess.
+                guess = get_model_guess(
+                    client, sequence, feedback,
+                    attempts_left, difficulty, history
+                )
 
-            if done:
-                break
+                # Submit the guess to the environment.
+                result = await env.step({"guess": guess})
+                obs = result.observation
 
-        # Compute normalized score in [0.0, 1.0].
-        score   = sum(rewards) / MAX_TOTAL_REWARD if MAX_TOTAL_REWARD > 0 else 0.0
-        score   = min(max(score, 0.0), 1.0)        # Clamp to valid range.
-        success = score >= SUCCESS_SCORE_THRESHOLD
+                reward = result.reward or 0.0
+                done = result.done
+                error = None   # Wrong guesses are normal, not runtime errors.
+
+                # Update episode trackers.
+                rewards.append(reward)
+                steps_taken = step
+                feedback = obs.feedback
+                attempts_left = obs.attempts_left
+
+                # Emit step log right after the environment responds.
+                log_step(step=step, action=guess,
+                         reward=reward, done=done, error=error)
+
+                # Keep short history to avoid repeating bad guesses.
+                history.append(f"Step {step}: guessed '{guess}' -> {feedback}")
+
+                if done:
+                    break
+
+            # Keep score strictly inside (0, 1) to satisfy task graders.
+            raw_score = sum(rewards) / MAX_TOTAL_REWARD if MAX_TOTAL_REWARD > 0 else 0.0
+            score = min(max(raw_score, EPSILON_SCORE), 1.0 - EPSILON_SCORE)
+            success = score >= SUCCESS_SCORE_THRESHOLD
+
+            # Emit final summary log per task.
+            log_end(success=success, steps=steps_taken,
+                    score=score, rewards=rewards)
 
     finally:
         # Always close the environment, even on failure.
@@ -192,9 +203,8 @@ async def main() -> None:
             print(f"[DEBUG] env.close() error: {e}",
                   flush=True, file=__import__('sys').stderr)
 
-        # Emit final summary log no matter how the run ended.
-        log_end(success=success, steps=steps_taken,
-                score=score, rewards=rewards)
+        # Per-task end logs are emitted in the loop above.
+        pass
 
 
 if __name__ == "__main__":
