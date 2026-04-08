@@ -1,3 +1,12 @@
+---
+title: Logic Puzzles
+emoji: "🧩"
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # Logic-Puzzles
 
 An AI pattern puzzle environment built with OpenEnv. The agent sees a sequence, guesses the next value, and earns reward based on difficulty and speed.
