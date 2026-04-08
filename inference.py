@@ -4,7 +4,7 @@ import textwrap
 from typing import List, Optional
 from openai import OpenAI
 
-API_KEY       = os.getenv("HF_TOKEN")
+API_KEY       = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY")
 API_BASE_URL  = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME    = os.getenv("MODEL_NAME",   "Qwen/Qwen2.5-72B-Instruct")
 IMAGE_NAME    = os.getenv("IMAGE_NAME")   # Docker image used to start the environment
@@ -120,9 +120,9 @@ async def main() -> None:
     # Initialize API client.
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
-    # Start the environment client from the Docker image.
-    from my_pattern_env import PatternEnvClient
-    env = await PatternEnvClient.from_docker_image(IMAGE_NAME)
+    # Start the environment client from the local server.
+    from client import PatternEnvClient
+    env = await PatternEnvClient.from_url("http://localhost:7860")
 
     # Episode tracking.
     history : List[str]  = []

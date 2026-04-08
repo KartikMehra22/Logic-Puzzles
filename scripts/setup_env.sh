@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$(dirname "${BASH_SOURCE[0]}")/../.env"
+source .env
 
 # Required variables checked by the submission system.
 export HF_TOKEN
