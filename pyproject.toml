@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "logic-puzzles"
+version = "1.0.0"
+description = "OpenEnv pattern puzzle environment"
+requires-python = ">=3.11"
+dependencies = [
+	"openenv-core>=0.2.0",
+	"fastapi>=0.104.0",
+	"uvicorn>=0.24.0",
+	"pydantic>=2.0.0",
+	"openai>=1.0.0",
+	"httpx>=0.24.0",
+]
+
+[project.scripts]
+server = "server.app:main"
+
+[tool.setuptools]
+py-modules = []

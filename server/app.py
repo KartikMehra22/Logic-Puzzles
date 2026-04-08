@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -9,9 +9,10 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from server.environment import PatternEnvironment
+from models import PatternAction, PatternObservation, PatternState
 
 # one app, one shared environment
-app = FastAPI(title="Pattern Sequence Environment")
+app = FastAPI(title="Pattern Sequence Environment", version="1.0.0")
 env = PatternEnvironment()   # one game instance shared across requests
 
 
@@ -21,6 +22,33 @@ class ResetRequest(BaseModel):
 
 class StepRequest(BaseModel):
     guess: str                         # the AI's answer
+
+
+@app.get("/metadata")
+def metadata():
+    return {
+        "name": "pattern-puzzle-env",
+        "description": "Pattern sequence puzzle game where AI agents solve mathematical and alphabetical sequences.",
+    }
+
+
+@app.get("/schema")
+def schema():
+    return {
+        "action": PatternAction.model_json_schema(),
+        "observation": PatternObservation.model_json_schema(),
+        "state": PatternState.model_json_schema(),
+    }
+
+
+@app.post("/mcp")
+async def mcp(request: Request):
+    payload = await request.json()
+    return {
+        "jsonrpc": "2.0",
+        "id": payload.get("id") if isinstance(payload, dict) else None,
+        "result": {"status": "ok"},
+    }
 
 
 # reset the game
@@ -55,10 +83,14 @@ def state():
 # simple health check
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "healthy"}
+
+
+def main(host: str = "0.0.0.0", port: int = 7860) -> None:
+    uvicorn.run(app, host=host, port=port)
 
 
 # local run
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=7860, reload=True)
+    main()
     
