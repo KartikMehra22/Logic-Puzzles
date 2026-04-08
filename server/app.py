@@ -24,6 +24,16 @@ class StepRequest(BaseModel):
     guess: str                         # the AI's answer
 
 
+@app.get("/")
+def root():
+    return {
+        "status": "running",
+        "name": "pattern-puzzle-env",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
 @app.get("/metadata")
 def metadata():
     return {
